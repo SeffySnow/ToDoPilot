@@ -1,0 +1,164 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+    <meta charset="UTF-8">
+    <title>To do list</title>
+<!--    <meta name="viewport" content="width=device-width, initial-scale=1">-->
+    <link rel="stylesheet" href="new.css">
+
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css">
+      <link rel="stylesheet" href="bootstrap.min.css">
+
+
+
+
+
+</head>
+<body>
+<div id="main-page">
+<div class = "container container-sm " id="input-box" >
+    <input id="input" name="input" maxlength="55" placeholder="Write Your Task Here">
+    <span><button id="addOn"><i class="bi bi-plus-square"></i></button></span>
+</div>
+<div class="container container-sm">
+      <div  id="nav">
+       <a class="btn" id="All" href="#">All</a>
+       <a class="btn" id="completed" href="#">Completed</a>
+        <a class="btn" id="active" href="#">Active</a>
+    </div>
+    <div id="list">
+        <ol id="listIn">
+
+        </ol>
+    </div>
+</div>
+</div>
+<div id="edit">
+
+    <h1 id="h_edit" style="display: inline-block">Edit</h1>
+    <span id="close"><i class="bi bi-x-lg"></i></span>
+
+    <input id = "name_edit" placeholder="Enter New Name" name = "nw_name" type="text">
+
+    <button id ="edit_btn" >Edit</button>
+</div>
+<div id="blur">
+
+</div>
+<script src="js/jquery-3.6.1.min.js"></script>
+<script>
+    let id = 0;
+    $("#addOn").click(function (){
+        id+=1
+        let input = $("#input").val();
+        if(input.length > 0) {
+            let li = document.createElement("li");
+            li.id = id
+            let text = document.createElement("p");
+            text.innerHTML = input;
+            li.appendChild(text);
+            li.setAttribute("data-state","undone")
+            let icon = document.createElement("i");
+            icon.classList.add("bi", "bi-app");
+            icon.setAttribute("data-state", "undone");
+
+            let rmv = document.createElement("span");
+            let edt = document.createElement("span");
+            edt.innerHTML = "edit";
+            edt.classList.add("edit");
+            rmv.innerHTML = "remove";
+            rmv.classList.add("remove");
+            li.appendChild(rmv);
+            li.appendChild(edt);
+            li.appendChild(icon);
+            $("#listIn").append(li);
+
+            $("#input").val(null);
+             $(".edit").click(function(){
+                 let li_tracker = this.parentElement;
+
+                 $("#edit").css({
+                     "display": "block",
+                 });
+                 $("#blur").css({
+                     "display":"block",
+                 });
+                 $("#main-page").css("opacity","0.7");
+                 $("#name_edit").val($(this).parent().children("p").html());
+                 $("#edit_btn").click(function (){
+                     let value = $("#name_edit").val();
+                     li_tracker.querySelector("p").innerHTML = value;
+                     close(this)
+                 });
+                 $("#close").click(function (){
+                     close(this);
+                 });
+             });
+             $(rmv).click(function (){
+                  this.parentElement.remove();
+             });
+        }});
+
+
+
+            $('#listIn').click(function (e){
+                if(e.target.nodeName==="I"){
+                     if (e.target.classList.contains("bi-app")) {
+                        e.target.classList.remove("bi-app");
+                        e.target.classList.add("bi-check2");
+                         e.target.parentElement.setAttribute("data-state","done");
+                         console.log(e.target)
+                    }else if(e.target.classList.contains("bi-check2")){
+                         e.target.classList.remove("bi-check2");
+                        e.target.classList.add("bi-app");
+
+                        e.target.parentElement.setAttribute("data-state","undone");
+                     }
+                }
+            });
+
+
+
+
+            function close(input){
+                $(input).parent().fadeOut(500);
+                $('#main-page').css("opacity","1");
+            }
+
+            $("#All").click(function (){
+                $("#listIn").children("li").fadeIn(300)
+            });
+            $("#completed").click(function (){
+                $("#listIn").children("li").fadeIn(10);
+
+                let items_all =$("#listIn").children("li");
+                console.log($(document).find("li[data-state=done]"));
+                for(let i = 0; i < items_all.length;i++){
+                    console.log(items_all[i])
+                    let state = items_all[i].getAttribute("data-state");
+                    if(state === "undone"){
+                        $(items_all[i]).fadeOut(10)
+                    }
+                }
+               });
+            $("#active").click(function (){
+                 $("#listIn").children("li").fadeIn(10);
+                let items_all =$("#listIn").children("li");
+                for(let i = 0; i < items_all.length;i++){
+                    console.log(items_all[i])
+                    let state = items_all[i].getAttribute("data-state");
+                    if(state === "done"){
+                        $(items_all[i]).fadeOut(10)
+                    }
+                }
+               })
+
+
+
+</script>
+
+
+
+</body>
