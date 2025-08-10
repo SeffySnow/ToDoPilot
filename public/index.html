@@ -1,0 +1,603 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>To do list</title>
+  <link rel="stylesheet" href="new.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css" />
+  <link rel="stylesheet" href="bootstrap.min.css" />
+</head>
+<body>
+<div id="main-page">
+  <div class="container container-sm" id="input-box">
+    <input id="input" name="input" maxlength="55" placeholder="Write Your Task Here" />
+    <span><button id="voiceBtn"><i class="bi bi-mic"></i></button></span>
+    <span><button id="addOn"><i class="bi bi-plus-square"></i></button></span>
+  </div>
+
+  <!-- Voice Processing Modal -->
+  <div id="voice-modal">
+    <h3>Voice Assistant</h3>
+    <div id="voice-status">Click the microphone to start</div>
+    <div id="voice-transcript"></div>
+    <div class="voice-buttons">
+      <button id="start-voice-btn">Start Listening</button>
+      <button id="stop-voice-btn" disabled>Stop</button>
+      <button id="cancel-voice-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="container container-sm">
+    <div id="nav">
+      <a class="btn" id="All" href="#">All</a>
+      <a class="btn" id="completed" href="#">Completed</a>
+      <a class="btn" id="active" href="#">Active</a>
+    </div>
+    <div id="list">
+      <ol id="listIn"></ol>
+    </div>
+  </div>
+</div>
+
+<div id="edit">
+  <h1 id="h_edit" style="display:inline-block">Edit</h1>
+  <span id="close"><i class="bi bi-x-lg"></i></span>
+  <input id="name_edit" placeholder="Enter New Name" name="nw_name" type="text" />
+  <button id="edit_btn">Edit</button>
+</div>
+
+<!-- Date Picker Modal -->
+<div id="date-picker-modal">
+  <h3>Select Due Date</h3>
+  <input type="date" id="date-input" />
+  <div class="date-picker-buttons">
+    <button id="set-date-btn">Set Date</button>
+    <button id="remove-date-btn">Remove Date</button>
+    <button id="cancel-date-btn">Cancel</button>
+  </div>
+</div>
+
+<div id="blur"></div>
+
+<script src="js/jquery-3.6.1.min.js"></script>
+<script src="https://unpkg.com/chrono-node/dist/chrono.min.js"></script>
+<script>
+  let id = 0;
+  let currentTaskForDate = null;
+  let recognition = null;
+  let isListening = false;
+
+  function toLocalISO(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Parse YYYY-MM-DD as a LOCAL date (midnight local), not UTC
+  function dateFromISOLocal(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  // OpenRouter AI configuration (⚠️ move this server-side for production)
+
+
+  // Initialize speech recognition
+  function initSpeechRecognition() {
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onstart = function () {
+        isListening = true;
+        $("#voice-status").text("Listening...");
+        $("#start-voice-btn").prop("disabled", true);
+        $("#stop-voice-btn").prop("disabled", false);
+        $("#voiceBtn i").removeClass("bi-mic").addClass("bi-mic-fill");
+      };
+
+      recognition.onresult = function (event) {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        $("#voice-transcript").text(transcript);
+      };
+
+      recognition.onend = function () {
+        isListening = false;
+        $("#voice-status").text("Processing...");
+        $("#start-voice-btn").prop("disabled", false);
+        $("#stop-voice-btn").prop("disabled", true);
+        $("#voiceBtn i").removeClass("bi-mic-fill").addClass("bi-mic");
+
+        const transcript = $("#voice-transcript").text();
+        if (transcript.trim()) {
+          processVoiceCommand(transcript);
+        }
+      };
+
+      recognition.onerror = function (event) {
+        $("#voice-status").text("Error: " + event.error);
+        isListening = false;
+        $("#start-voice-btn").prop("disabled", false);
+        $("#stop-voice-btn").prop("disabled", true);
+        $("#voiceBtn i").removeClass("bi-mic-fill").addClass("bi-mic");
+      };
+    } else {
+      alert("Speech recognition not supported in this browser");
+    }
+  }
+
+  async function processVoiceCommand(transcript) {
+    let command;
+
+    // Few-shot examples use LOCAL dates
+    const todayLocal = toLocalISO(new Date());
+    const tomorrowLocal = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return toLocalISO(d);
+    })();
+
+    const prompt = `
+You are an assistant that extracts structured task data from sentences.
+**Output must be VALID JSON** (double-quoted keys/strings, no trailing commas, no backticks):
+  intent:    "add_task" | "complete_task" | "edit_task" | "remove_task" | "show_tasks"
+  task:      "<task description or identifier>"
+  new_name:  "<for edit_task; null otherwise>"
+  due_date:  "<YYYY-MM-DD or null>"
+  filter:    "all" | "completed" | "active"
+
+Examples:
+Sentence: "I'm going to make lunch today"
+→ { "intent":"add_task", "task":"make lunch", "due_date":"${todayLocal}", "new_name":null, "filter":null }
+
+Sentence: "I made lunch"
+→ { "intent":"complete_task", "task":"make lunch", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I washed the dishes"
+→ { "intent":"complete_task", "task":"wash the dishes", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I have to wash the dishes tomorrow"
+→ { "intent":"add_task", "task":"wash the dishes", "due_date":"${tomorrowLocal}", "new_name":null, "filter":null }
+
+Now process this:
+Sentence: "${transcript}"
+`;
+
+    try {
+        const res = await fetch("/api/voice-command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemma-3n-e2b-it:free",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.1
+      })
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`OpenRouter ${res.status}: ${err}`);
+      }
+
+      const payload = await res.json();
+      let aiText = payload.choices[0].message.content.trim();
+      const fenceMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonText = fenceMatch ? fenceMatch[1].trim() : aiText;
+      command = JSON.parse(jsonText);
+
+      // Normalize/parse due date (handles "today", "tomorrow", etc.)
+      if (command.intent === "add_task") {
+        let dt = null;
+
+        if (command.due_date) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(command.due_date)) {
+            dt = dateFromISOLocal(command.due_date); // LOCAL parse
+          } else {
+            dt = chrono.parseDate(command.due_date, new Date());
+          }
+        }
+
+        // If model didn't include due_date, infer from transcript
+        if (!dt) dt = chrono.parseDate(transcript, new Date());
+
+        if (dt) {
+          const iso = toLocalISO(dt);
+          const todayIso = toLocalISO(new Date());
+
+          // year check (defensive)
+          if (!/^\d{4}$/.test(iso.slice(0, 4))) {
+            alert("Year must be exactly 4 digits.");
+            return;
+          }
+          // allow TODAY; block only past
+          if (iso < todayIso) {
+            alert("Please specify today or a future date (YYYY-MM-DD).");
+            return;
+          }
+          command.due_date = iso;
+        }
+      }
+    } catch (err) {
+      console.error("Voice processing error:", err);
+      $("#voice-status").text("Sorry, I couldn't understand that command.");
+      return;
+    }
+
+    executeVoiceCommand(command);
+  }
+
+  // Execute the parsed voice command
+  function executeVoiceCommand(command) {
+    switch (command.intent) {
+      case "add_task":
+        addTaskViaVoice(command.task, command.due_date);
+        break;
+      case "complete_task":
+        completeTaskViaVoice(command.task);
+        break;
+      case "edit_task":
+        editTaskViaVoice(command.task, command.new_name);
+        break;
+      case "remove_task":
+        removeTaskViaVoice(command.task);
+        break;
+      case "show_tasks":
+        showTasksViaVoice(command.filter);
+        break;
+      default:
+        $("#voice-status").text("Command not recognized.");
+    }
+    setTimeout(closeVoiceModal, 2000);
+  }
+
+  // Voice command implementations
+  function addTaskViaVoice(taskName, dueDate) {
+    if (!taskName) {
+      $("#voice-status").text("No task name provided.");
+      return;
+    }
+
+    $("#input").val(taskName);
+    $("#addOn").click();
+
+    if (dueDate) {
+      // Find the last added task and set its due date
+      setTimeout(() => {
+        const lastTask = $("#listIn li").last();
+        if (lastTask.length) {
+          const dueDateDisplay = lastTask.find(".due-date-display");
+          dueDateDisplay.attr("data-due-date", dueDate);
+          dueDateDisplay.html("Due: " + dueDate);
+          dueDateDisplay.show();
+        }
+      }, 100);
+    }
+
+    $("#voice-status").text(`Task "${taskName}" added successfully!`);
+  }
+
+  function completeTaskViaVoice(identifier) {
+    const tasks = $("#listIn li");
+    let found = false;
+
+    tasks.each(function () {
+      const taskText = $(this).find(".task-text").text().toLowerCase();
+      if (taskText.includes(identifier.toLowerCase())) {
+        const icon = $(this).find(".bi-app");
+        if (icon.length) {
+          icon.removeClass("bi-app").addClass("bi-check2");
+          $(this).attr("data-state", "done");
+          found = true;
+          $("#voice-status").text(`Task completed: "${taskText}"`);
+          return false; // Break
+        }
+      }
+    });
+
+    if (!found) {
+      $("#voice-status").text("Task not found or already completed.");
+    }
+  }
+
+  function editTaskViaVoice(identifier, newName) {
+    const tasks = $("#listIn li");
+    let found = false;
+
+    tasks.each(function () {
+      const taskText = $(this).find(".task-text").text().toLowerCase();
+      if (taskText.includes(identifier.toLowerCase())) {
+        $(this).find(".task-text").text(newName);
+        found = true;
+        $("#voice-status").text(`Task updated to: "${newName}"`);
+        return false; // Break
+      }
+    });
+
+    if (!found) {
+      $("#voice-status").text("Task not found.");
+    }
+  }
+
+  function removeTaskViaVoice(identifier) {
+    const tasks = $("#listIn li");
+    let found = false;
+
+    tasks.each(function () {
+      const taskText = $(this).find(".task-text").text().toLowerCase();
+      if (taskText.includes(identifier.toLowerCase())) {
+        $(this).remove();
+        found = true;
+        $("#voice-status").text(`Task removed: "${taskText}"`);
+        return false; // Break
+      }
+    });
+
+    if (!found) {
+      $("#voice-status").text("Task not found.");
+    }
+  }
+
+  function showTasksViaVoice(filter) {
+    switch (filter) {
+      case "all":
+        $("#All").click();
+        $("#voice-status").text("Showing all tasks");
+        break;
+      case "completed":
+        $("#completed").click();
+        $("#voice-status").text("Showing completed tasks");
+        break;
+      case "active":
+        $("#active").click();
+        $("#voice-status").text("Showing active tasks");
+        break;
+      default:
+        $("#voice-status").text("Unknown filter");
+    }
+  }
+
+  function closeVoiceModal() {
+    $("#voice-modal").fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+    $("#voice-transcript").text("");
+    $("#voice-status").text("Click the microphone to start");
+  }
+
+  // Voice button event handlers
+  $("#voiceBtn").click(function () {
+    if (!recognition) {
+      initSpeechRecognition();
+    }
+
+    $("#voice-modal").css({ display: "block" });
+    $("#blur").css({ display: "block" });
+    $("#main-page").css("opacity", "0.7");
+  });
+
+  $("#start-voice-btn").click(function () {
+    if (recognition && !isListening) {
+      recognition.start();
+    }
+  });
+
+  $("#stop-voice-btn").click(function () {
+    if (recognition && isListening) {
+      recognition.stop();
+    }
+  });
+
+  $("#cancel-voice-btn").click(function () {
+    if (recognition && isListening) {
+      recognition.stop();
+    }
+    closeVoiceModal();
+  });
+
+  // Initialize speech recognition on page load
+  $(document).ready(function () {
+    initSpeechRecognition();
+  });
+
+  // Add task button
+  $("#addOn").click(function () {
+    id += 1;
+    let input = $("#input").val();
+    if (input.length > 0) {
+      let li = document.createElement("li");
+      li.id = id;
+
+      // Create task content container
+      let taskContent = document.createElement("div");
+      taskContent.classList.add("task-content");
+
+      let text = document.createElement("p");
+      text.innerHTML = input;
+      text.classList.add("task-text");
+
+      // Create due date display
+      let dueDateDisplay = document.createElement("span");
+      dueDateDisplay.classList.add("due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", "");
+
+      taskContent.appendChild(text);
+      taskContent.appendChild(dueDateDisplay);
+      li.appendChild(taskContent);
+
+      li.setAttribute("data-state", "undone");
+      let icon = document.createElement("i");
+      icon.classList.add("bi", "bi-app");
+      icon.setAttribute("data-state", "undone");
+
+      // Create calendar icon for date picker
+      let calendarIcon = document.createElement("span");
+      calendarIcon.innerHTML = '<i class="bi bi-calendar3"></i>';
+      calendarIcon.classList.add("calendar-icon");
+
+      let rmv = document.createElement("span");
+      let edt = document.createElement("span");
+      edt.innerHTML = "edit";
+      edt.classList.add("edit");
+      rmv.innerHTML = "remove";
+      rmv.classList.add("remove");
+
+      // FIX: do NOT append dueDateDisplay again (it already lives in taskContent)
+      li.appendChild(calendarIcon);
+      li.appendChild(rmv);
+      li.appendChild(edt);
+      li.appendChild(icon);
+      $("#listIn").append(li);
+
+      $("#input").val(null);
+
+      // Calendar icon click handler
+      $(calendarIcon).click(function () {
+        currentTaskForDate = li;
+        let currentDate = dueDateDisplay.getAttribute("data-due-date");
+
+        const today = new Date();
+        const localToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const minDate = localToday.toISOString().split("T")[0];
+        $("#date-input").attr("min", minDate); // Only today or future
+
+        if (currentDate) {
+          $("#date-input").val(currentDate);
+        } else {
+          $("#date-input").val("");
+        }
+
+        $("#date-picker-modal").css({ display: "block" });
+        $("#blur").css({ display: "block" });
+        $("#main-page").css("opacity", "0.7");
+      });
+
+      $(".edit").click(function () {
+        let li_tracker = this.parentElement;
+
+        $("#edit").css({ display: "block" });
+        $("#blur").css({ display: "block" });
+        $("#main-page").css("opacity", "0.7");
+        $("#name_edit").val($(this).parent().find(".task-text").html());
+        $("#edit_btn")
+          .off("click")
+          .click(function () {
+            let value = $("#name_edit").val();
+            li_tracker.querySelector(".task-text").innerHTML = value;
+            close(this);
+          });
+        $("#close").click(function () {
+          close(this);
+        });
+      });
+
+      $(rmv).click(function () {
+        this.parentElement.remove();
+      });
+    }
+  });
+
+  // Date picker handlers
+  $("#set-date-btn").click(function () {
+    let selectedDate = $("#date-input").val();
+
+    const todayObj = new Date();
+    const localToday = new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+    const today = localToday.toISOString().split("T")[0];
+
+    if (selectedDate < today) {
+      alert("Please choose today or a future date.");
+      return;
+    }
+    // Year must be exactly 4 digits
+    const year = selectedDate.split("-")[0] || "";
+    if (!/^\d{4}$/.test(year)) {
+      alert("Year must be exactly 4 digits.");
+      return;
+    }
+    if (selectedDate && currentTaskForDate) {
+      let dueDateDisplay = currentTaskForDate.querySelector(".due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", selectedDate);
+      dueDateDisplay.innerHTML = "Due: " + selectedDate;
+      dueDateDisplay.style.display = "inline";
+    }
+    closeDatePicker();
+  });
+
+  $("#remove-date-btn").click(function () {
+    if (currentTaskForDate) {
+      let dueDateDisplay = currentTaskForDate.querySelector(".due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", "");
+      dueDateDisplay.innerHTML = "";
+      dueDateDisplay.style.display = "none";
+    }
+    closeDatePicker();
+  });
+
+  $("#cancel-date-btn").click(function () {
+    closeDatePicker();
+  });
+
+  function closeDatePicker() {
+    $("#date-picker-modal").fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+    currentTaskForDate = null;
+  }
+
+  $("#listIn").click(function (e) {
+    if (e.target.nodeName === "I" && e.target.classList.contains("bi-app")) {
+      if (e.target.classList.contains("bi-app")) {
+        e.target.classList.remove("bi-app");
+        e.target.classList.add("bi-check2");
+        e.target.parentElement.setAttribute("data-state", "done");
+      } else if (e.target.classList.contains("bi-check2")) {
+        e.target.classList.remove("bi-check2");
+        e.target.classList.add("bi-app");
+        e.target.parentElement.setAttribute("data-state", "undone");
+      }
+    }
+  });
+
+  function close(input) {
+    $(input).parent().fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+  }
+
+  $("#All").click(function () {
+    $("#listIn").children("li").fadeIn(300);
+  });
+
+  $("#completed").click(function () {
+    $("#listIn").children("li").fadeIn(10);
+
+    let items_all = $("#listIn").children("li");
+    for (let i = 0; i < items_all.length; i++) {
+      let state = items_all[i].getAttribute("data-state");
+      if (state === "undone") {
+        $(items_all[i]).fadeOut(10);
+      }
+    }
+  });
+
+  $("#active").click(function () {
+    $("#listIn").children("li").fadeIn(10);
+    let items_all = $("#listIn").children("li");
+    for (let i = 0; i < items_all.length; i++) {
+      let state = items_all[i].getAttribute("data-state");
+      if (state === "done") {
+        $(items_all[i]).fadeOut(10);
+      }
+    }
+  });
+</script>
+</body>
+</html>

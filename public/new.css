@@ -1,0 +1,564 @@
+/* ================================
+   Task Item Layout & Text
+================================= */
+.task-content {
+    display: inline-block;
+    width: 70%;
+    vertical-align: middle;
+    min-width: 0; 
+}
+
+.task-text {
+    display: inline-block;
+    margin: 0;
+    margin-right: 10px;
+    overflow-wrap: break-word; 
+}
+
+.due-date-display {
+    display: inline-block;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+    margin-left: 5px;
+    white-space: nowrap;
+}
+
+
+/* ================================
+   Calendar Icon
+================================= */
+.calendar-icon {
+    width: 10%;
+    display: inline-block;
+    height: 100%;
+    float: right;
+    font-size: 80%;
+    text-align: center;
+    cursor: pointer;
+    color: #007bff;
+    line-height: 30px;
+    margin-right: 5px;
+}
+
+.calendar-icon:hover {
+    color: #0056b3;
+}
+
+.calendar-icon i {
+    font-size: 16px;
+}
+
+
+/* ================================
+   Date Picker Modal
+================================= */
+#date-picker-modal {
+    width: 350px;
+    height: 200px;
+    background-color: white;
+    position: absolute;
+    margin: auto;
+    top: 25%;
+    z-index: 1000;
+    left: 0;
+    right: 0;
+    display: none;
+    box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
+    border: 2px solid #007bff;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+#date-picker-modal h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    text-align: center;
+}
+
+#date-picker-modal input[type="date"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.date-picker-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.date-picker-buttons button {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+#set-date-btn {
+    background-color: #28a745;
+    color: white;
+}
+
+#set-date-btn:hover {
+    background-color: #218838;
+}
+
+#remove-date-btn {
+    background-color: #dc3545;
+    color: white;
+}
+
+#remove-date-btn:hover {
+    background-color: #c82333;
+}
+
+#cancel-date-btn {
+    background-color: #6c757d;
+    color: white;
+}
+
+#cancel-date-btn:hover {
+    background-color: #5a6268;
+}
+
+
+
+#listIn li {
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: rgba(128, 128, 128, 0.7);
+    padding-bottom: 5px;
+    width: 90%;
+    height: auto;
+    min-height: 30px;
+    line-height: 30px;
+    font-size: 19px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+}
+
+
+/* Adjust existing elements */
+.bi-app, .bi-check2 {
+    float: right;
+    cursor: pointer;
+    font-size: 22px;
+    display: block;
+    margin-left: auto;
+}
+
+
+.bi-check2 {
+    color: green;
+}
+
+
+.remove {
+    width: 10%;
+    display: inline-block;
+    height: 100%;
+    float: right;
+    font-size: 80%;
+    text-align: center;
+    cursor: pointer;
+    color: red;
+    line-height: 30px;
+}
+
+
+.remove:hover {
+    color: purple;
+}
+
+
+.edit {
+    width: 10%;
+    display: inline-block;
+    height: 100%;
+    font-size: 80%;
+    float: right;
+    line-height: 30px;
+    text-align: center;
+    cursor: pointer;
+    color: blue;
+    margin-left: 5px;
+}
+
+
+.edit:hover {
+    color: purple;
+}
+
+
+       
+    
+*{
+box-sizing: border-box;
+}
+body,html {
+    width: 100%;
+    max-height: 100%;
+    padding: 0;
+    margin: 0;
+}
+.container-sm{
+    max-width: 90%;
+}
+#input-box{
+    /*border:1px solid red;*/
+    width:500px;
+    height:50px;
+    margin-top: 50px;
+
+
+}
+#input{
+    width:90%;
+    padding: 5px 5px;
+    /*border-radius: 3%;*/
+
+
+}
+#input:focus{
+    outline: none;
+    border-color: pink;
+    box-shadow: none;
+
+}
+#addOn .bi {
+    margin-top:1px;
+    font-size: 18.5px;
+    display: block;
+    color: #f16e85;
+
+
+}
+.container {
+    margin:auto;
+    width:500px;
+
+
+}
+#nav{
+    width:100%;
+    height: 35px;
+    /*border:1px solid red;*/
+    display: flex;
+    justify-content: center;
+}
+.btn{
+    display: inline-block;
+    margin-left: 10px;
+    text-decoration: none;
+    width:90px;
+    box-shadow: 1px 2px 3px #000 ;
+    background-color: white;
+    margin-bottom: 5px;
+    color: #f5667e;
+
+
+}
+.btn:hover{
+    background: radial-gradient(rgb(250, 250, 250) 20%, rgb(238, 233, 233) 80%);
+    /*box-shadow: 1px 1px 2px #f1eded inset;*/
+        /*background: linear-gradient(-45deg,rgb(248, 248, 243), rgb(236, 234, 234));*/
+}
+.btn:focus{
+    background: radial-gradient(rgb(250, 250, 250) 20%, rgb(238, 233, 233) 80%);
+    box-shadow: 1px 1px 3px #000 inset;
+    color:gray;
+
+}
+
+
+#list{
+    margin-top:5px;
+    height:600px;
+    box-shadow: 1px 2px 4px #696767;
+    width:50%;
+    margin: auto;
+
+}
+#list #listIn{
+    height:100%;
+
+    /*list-style: none;*/
+    padding-top: 30px;
+    margin-top:10px;
+
+        /*border:1px solid red;*/
+
+}
+#listIn li {
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: rgba(128, 128, 128, 0.7);
+    padding-bottom: 5px;
+    width: 90%;
+    height: 30px;
+    line-height: 30px;
+    font-size: 19px;
+    margin-bottom: 20px;
+    /*border: 1px solid red;*/
+}
+p{
+    display: inline-block;
+}
+
+.bi-app{
+    float:right;
+    cursor: pointer;
+    font-size: 22px;
+    display: block;
+
+}
+.bi-check2{
+    float:right;
+    cursor: pointer;
+    font-size: 24px;
+    color:green;
+}
+.remove{
+/*border:1px solid blue;*/
+    width:10%;
+    display: inline-block;
+    height:100%;
+    float:right;
+    font-size: 80%;
+    text-align: center;
+    cursor: pointer;
+    color: red;
+}
+.remove:hover{
+    color:purple;
+}
+.edit{
+    width:10%;
+    display: inline-block;
+    height:100%;
+    font-size: 80%;
+    float:right;
+    line-height: 30px;
+    text-align: center;
+    cursor: pointer;
+    color: blue;
+    /*border:1px solid red;*/
+    margin-left: 5px;
+}
+.edit:hover{
+    color:purple;
+}
+.state:hover{
+    color:gray;
+}
+#blur{
+    width:100%;
+    max-height:100%;
+    position: absolute;
+    background-color: gray;
+    opacity: 0.3;
+    display: none;
+}
+#edit{
+        width:400px;
+        height :200px;
+        background-color: white;
+        position:absolute;
+        margin:auto;
+        top:30%;
+        z-index: 1000;
+        left:0;
+        right:0;
+        display:none;
+        box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
+        border:2px solid pink;
+        padding-left:2px;
+}
+        #edit #h_edit{
+            margin-left: 3%;
+        }
+#edit label{
+    display: block;
+    font-size: 22px;
+    margin-left:5%;
+    margin-bottom: 10px;
+}
+#edit input{
+    display: block;
+    width:80%;
+    height:35px;
+    line-height: 35px;
+     margin-left:5%;
+    font-size: 18px;
+
+    padding-left: 3px;
+    margin-bottom: 15px;
+}
+#close{
+    margin-right: 10px;
+    /*padding :6px 10px 6px 10px;*/
+    /*border-radius: 5px;*/
+    margin-top: 20px;
+    float:right;
+    border:none;
+    cursor: pointer;
+    font-size: 22px;
+    /*box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);*/
+    /*background-color: #e52a3c;*/
+}
+#edit_btn{
+     margin-left: 5%;
+    padding :5px 15px 5px 15px;
+    border-radius: 5px;
+    /*margin-top: 15px;*/
+    border:none;
+    cursor: pointer;
+    background-color: #a1a2a0;
+}
+#main-page{
+    width:100%;
+    height:100%;
+}
+#close{
+    color: #f63c5d
+}
+#close:hover{
+   color: gray;
+}
+
+/* Make the input-box a horizontal flex container */
+#input-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;           /* space between elements */
+}
+
+/* Let the text input grow to fill remaining space */
+#input-box #input {
+  flex: 1;
+  margin: 0;          /* remove any default margins */
+}
+
+/* Tweak both buttons so they line up */
+#input-box button {
+  background: none;
+  border: none;
+  padding: 6px;
+  font-size: 20px;
+  cursor: pointer;
+  color: #f16e85;
+}
+
+/* Optional: hover states */
+#input-box button:hover {
+  color: #d04470;
+}
+
+#voice-modal {
+    width: 400px;
+    height: 250px;
+    background-color: white;
+    position: absolute;
+    margin: auto;
+    top: 20%;
+    z-index: 1000;
+    left: 0;
+    right: 0;
+    display: none;
+    box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.5);
+    border: 2px solid #007bff;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+#voice-modal h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    text-align: center;
+}
+
+#voice-status {
+    text-align: center;
+    margin-bottom: 10px;
+    font-weight: bold;
+    color: #007bff;
+}
+
+#voice-transcript {
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    min-height: 60px;
+    margin-bottom: 15px;
+    font-style: italic;
+    color: #666;
+}
+
+.voice-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.voice-buttons button {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+#start-voice-btn {
+    background-color: #28a745;
+    color: white;
+}
+
+#start-voice-btn:hover:not(:disabled) {
+    background-color: #218838;
+}
+
+#stop-voice-btn {
+    background-color: #dc3545;
+    color: white;
+}
+
+#stop-voice-btn:hover:not(:disabled) {
+    background-color: #c82333;
+}
+
+#cancel-voice-btn {
+    background-color: #6c757d;
+    color: white;
+}
+
+#cancel-voice-btn:hover {
+    background-color: #5a6268;
+}
+
+.voice-buttons button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Voice button active state */
+#voiceBtn i.bi-mic-fill {
+    color: #dc3545;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
