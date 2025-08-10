@@ -24,6 +24,6 @@ I wanted task management to feel **less effortful** and more conversational. Thi
 - **AI & Logic:** LLM for intent/date extraction, lightweight agent to execute intents
 - **Date parsing:** chrono-node (natural language → dates, normalized to `YYYY-MM-DD`)
 - **Backend:** Node.js, Express (as a proxy to keep API keys secret), node-fetch
-- **Config & Security:** dotenv for environment variables, `.gitignore` to keep secrets out of Git
+
 
 
