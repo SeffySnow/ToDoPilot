@@ -26,4 +26,16 @@ I wanted task management to feel **less effortful** and more conversational. Thi
 - **Backend:** Node.js, Express (as a proxy to keep API keys secret), node-fetch
 
 
+## 🎥 Demo
+
+<video src="demo.mp4" 
+       controls 
+       loop 
+       muted 
+       playsinline 
+       width="720">
+  Your browser does not support the video tag. 
+  <a href="https://raw.githubusercontent.com/USER/REPO/BRANCH/demo/demo.mp4">Download the demo</a>.
+</video>
+
 
