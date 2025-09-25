@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ToDoPilot Metrics Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 30px;
+        }
+        
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            border-left: 4px solid #4facfe;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .metric-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .metric-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+        
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #4facfe;
+            margin: 10px 0;
+        }
+        
+        .metric-subtitle {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            transition: width 0.3s ease;
+        }
+        
+        .actions {
+            padding: 30px;
+            text-align: center;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            margin: 0 10px;
+            transition: transform 0.2s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
+        }
+        
+        .timestamp {
+            text-align: center;
+            color: #999;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 ToDoPilot Metrics Dashboard</h1>
+            <p>Real-time performance and usage analytics</p>
+        </div>
+        
+        <div class="metrics-grid" id="metricsGrid">
+            <div class="no-data">
+                <h3>No metrics data available</h3>
+                <p>Use the ToDoPilot app to generate metrics, then refresh this page.</p>
+                <p><strong>Tip:</strong> Press Ctrl+M in the main app to view live metrics!</p>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <button class="btn" onclick="refreshMetrics()">🔄 Refresh Metrics</button>
+            <button class="btn btn-secondary" onclick="exportMetrics()">📥 Export Data</button>
+            <button class="btn btn-secondary" onclick="clearMetrics()">🗑️ Clear Data</button>
+        </div>
+        
+        <div class="timestamp" id="lastUpdated">
+            Last updated: Never
+        </div>
+    </div>
+
+    <script>
+        // Load metrics from localStorage
+        function loadMetrics() {
+            const metricsData = localStorage.getItem('todopilot-metrics');
+            if (metricsData) {
+                return JSON.parse(metricsData);
+            }
+            return null;
+        }
+        
+        // Save metrics to localStorage
+        function saveMetrics(metrics) {
+            localStorage.setItem('todopilot-metrics', JSON.stringify(metrics));
+        }
+        
+        // Display metrics in the dashboard
+        function displayMetrics(metrics) {
+            const grid = document.getElementById('metricsGrid');
+            
+            if (!metrics || metrics.voiceCommands.total === 0) {
+                grid.innerHTML = `
+                    <div class="no-data">
+                        <h3>No metrics data available</h3>
+                        <p>Use the ToDoPilot app to generate metrics, then refresh this page.</p>
+                        <p><strong>Tip:</strong> Press Ctrl+M in the main app to view live metrics!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const successRate = metrics.voiceCommands.successRate || 0;
+            const avgResponseTime = metrics.performance.averageResponseTime || 0;
+            const fallbackRate = metrics.voiceCommands.total > 0 ? 
+                (metrics.performance.fallbackUsage / metrics.voiceCommands.total) * 100 : 0;
+            
+            grid.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">🎤</span>
+                        Voice Commands
+                    </div>
+                    <div class="metric-value">${metrics.voiceCommands.total}</div>
+                    <div class="metric-subtitle">Total commands processed</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${successRate}%"></div>
+                    </div>
+                    <div class="metric-subtitle">${successRate.toFixed(1)}% success rate</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">⚡</span>
+                        Response Time
+                    </div>
+                    <div class="metric-value">${avgResponseTime.toFixed(0)}ms</div>
+                    <div class="metric-subtitle">Average processing time</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">📝</span>
+                        Tasks Created
+                    </div>
+                    <div class="metric-value">${metrics.tasks.created}</div>
+                    <div class="metric-subtitle">${metrics.tasks.withDueDates} with due dates</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">✅</span>
+                        Tasks Completed
+                    </div>
+                    <div class="metric-value">${metrics.tasks.completed}</div>
+                    <div class="metric-subtitle">Completion rate: ${metrics.tasks.created > 0 ? 
+                        ((metrics.tasks.completed / metrics.tasks.created) * 100).toFixed(1) : 0}%</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">🔄</span>
+                        Fallback Usage
+                    </div>
+                    <div class="metric-value">${metrics.performance.fallbackUsage}</div>
+                    <div class="metric-subtitle">${fallbackRate.toFixed(1)}% of commands used fallback</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span class="metric-icon">📊</span>
+                        Session Stats
+                    </div>
+                    <div class="metric-value">${metrics.user.voiceCommandsPerSession}</div>
+                    <div class="metric-subtitle">Commands per session</div>
+                    <div class="metric-subtitle">Session duration: ${Math.round(metrics.user.sessionDuration / 1000 / 60)} minutes</div>
+                </div>
+            `;
+            
+            document.getElementById('lastUpdated').textContent = 
+                `Last updated: ${new Date().toLocaleString()}`;
+        }
+        
+        // Refresh metrics from the main app
+        function refreshMetrics() {
+            // Try to get metrics from the main app if it's open
+            if (window.opener && window.opener.metrics) {
+                const metrics = window.opener.metrics.getMetrics();
+                saveMetrics(metrics);
+                displayMetrics(metrics);
+            } else {
+                // Load from localStorage
+                const metrics = loadMetrics();
+                displayMetrics(metrics);
+            }
+        }
+        
+        // Export metrics as JSON
+        function exportMetrics() {
+            const metrics = loadMetrics();
+            if (metrics) {
+                const dataStr = JSON.stringify(metrics, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `todopilot-metrics-${new Date().toISOString().split('T')[0]}.json`;
+                link.click();
+            } else {
+                alert('No metrics data to export');
+            }
+        }
+        
+        // Clear all metrics
+        function clearMetrics() {
+            if (confirm('Are you sure you want to clear all metrics data?')) {
+                localStorage.removeItem('todopilot-metrics');
+                displayMetrics(null);
+            }
+        }
+        
+        // Auto-refresh every 5 seconds
+        setInterval(refreshMetrics, 5000);
+        
+        // Load metrics on page load
+        window.addEventListener('load', refreshMetrics);
+    </script>
+</body>
+</html>

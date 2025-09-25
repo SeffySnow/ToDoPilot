@@ -70,6 +70,7 @@
 
 <script src="js/jquery-3.6.1.min.js"></script>
 <script src="https://unpkg.com/chrono-node/dist/chrono.min.js"></script>
+<script src="metrics.js"></script>
 <script>
   let id = 0;
   let currentTaskForDate = null;
@@ -220,6 +221,9 @@ Tasks: ${JSON.stringify(tasks)}
   }
 
   async function processVoiceCommand(transcript) {
+    // Start metrics tracking
+    window.metrics.startVoiceCommand(transcript);
+    
     let command;
 
     // Few-shot examples use LOCAL dates
@@ -346,6 +350,14 @@ Sentence: "${transcript}"
 `;
 
     try {
+      // Check if we're running locally (has API server) or on GitHub Pages
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      
+      if (!isLocal) {
+        throw new Error("API not available on GitHub Pages");
+      }
+
+      // Make API call to local server (only works locally)
       const res = await fetch("/api/voice-command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -357,8 +369,7 @@ Sentence: "${transcript}"
       });
 
       if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`OpenRouter ${res.status}: ${err}`);
+        throw new Error(`API call failed: ${res.status} ${await res.text()}`);
       }
 
       const payload = await res.json();
@@ -374,10 +385,13 @@ Sentence: "${transcript}"
       try {
         command = JSON.parse(jsonText);
         console.log("Parsed command:", command);
+        // Record successful LLM processing
+        window.metrics.recordApiCall(true);
       } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
         console.log("Raw AI text:", aiText);
         command = { intent: "unknown" };
+        window.metrics.recordApiCall(false);
       }
 
       // Enhanced fallback: If intent is unclear or parsing failed, check for task patterns
@@ -409,13 +423,15 @@ Sentence: "${transcript}"
         console.log("Processing add_task with command:", command);
         let dt = null;
 
-        if (command.due_date) {
-          console.log("Command has due_date:", command.due_date);
-          if (/^\d{4}-\d{2}-\d{2}$/.test(command.due_date)) {
-            dt = dateFromISOLocal(command.due_date); // LOCAL parse
-          } else {
-            dt = chrono.parseDate(command.due_date, new Date());
-          }
+          if (command.due_date) {
+            console.log("Command has due_date:", command.due_date);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(command.due_date)) {
+              dt = dateFromISOLocal(command.due_date); // LOCAL parse
+            } else if (typeof chrono !== 'undefined' && chrono.parseDate) {
+              dt = chrono.parseDate(command.due_date, new Date());
+            } else {
+              console.log("Chrono not available for date parsing");
+            }
         } else {
           console.log("No due_date in command, checking transcript for date words");
         }
@@ -423,8 +439,13 @@ Sentence: "${transcript}"
         // If model didn't include due_date, try to infer from transcript
         if (!dt) {
           console.log("Attempting to parse date from transcript:", transcript);
-          dt = chrono.parseDate(transcript, new Date());
-          console.log("Chrono parsed date:", dt);
+          // Check if chrono is available before using it
+          if (typeof chrono !== 'undefined' && chrono.parseDate) {
+            dt = chrono.parseDate(transcript, new Date());
+            console.log("Chrono parsed date:", dt);
+          } else {
+            console.log("Chrono not available, skipping date parsing");
+          }
           
           // If chrono couldn't parse it, check for common date patterns
           if (!dt) {
@@ -470,6 +491,8 @@ Sentence: "${transcript}"
       }
     } catch (err) {
       console.error("Voice processing error:", err);
+      window.metrics.recordApiCall(false);
+      window.metrics.recordVoiceFailure(err, transcript);
       
       // Last resort fallback: Check for task patterns even if LLM fails completely
       const lowerTranscript = transcript.toLowerCase();
@@ -485,6 +508,7 @@ Sentence: "${transcript}"
           filter: null
         };
         console.log("Emergency fallback applied (I have to):", command);
+        window.metrics.recordVoiceSuccess(command.intent, 'fallback');
       } else if (/\bby\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week|this week)\b/i.test(transcript)) {
         command = {
           intent: "add_task",
@@ -494,13 +518,18 @@ Sentence: "${transcript}"
           filter: null
         };
         console.log("Emergency fallback applied (by day):", command);
+        window.metrics.recordVoiceSuccess(command.intent, 'fallback');
       } else {
         $("#voice-status").text("Sorry, I couldn't understand that command.");
+        window.metrics.recordVoiceFailure("Command not understood", transcript);
         return;
       }
     }
 
     executeVoiceCommand(command);
+    
+    // Record success
+    window.metrics.recordVoiceSuccess(command.intent, 'llm');
   }
 
   // Execute the parsed voice command
@@ -533,6 +562,7 @@ Sentence: "${transcript}"
     
     if (!taskName) {
       $("#voice-status").text("No task name provided.");
+      window.metrics.recordVoiceFailure("No task name provided", taskName);
       return;
     }
 
@@ -557,6 +587,9 @@ Sentence: "${transcript}"
     } else {
       console.log("No due date provided");
     }
+
+    // Record task creation
+    window.metrics.recordTaskCreated(!!dueDate);
 
     // Success message - different based on whether due date was set
     if (dueDate && dueDate !== null && dueDate !== undefined) {
@@ -583,13 +616,18 @@ Sentence: "${transcript}"
       if (icon.length) {
         icon.removeClass("bi-app").addClass("bi-check2");
         li.attr("data-state", "done");
+        window.metrics.recordTaskCompleted();
         $("#voice-status").text(`Task completed: "${local.task.text}"`);
         return;
       }
     }
 
-    // LLM fallback
+    // LLM fallback (only works locally)
     try {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (!isLocal) {
+        throw new Error("LLM not available on GitHub Pages");
+      }
       const pick = await llmPickClosestTask(identifier, tasks);
       if (pick && pick.match_id && pick.confidence >= 0.55) {
         const li = $(`#listIn li#${pick.match_id}`);
@@ -598,6 +636,7 @@ Sentence: "${transcript}"
         if (icon.length) {
           icon.removeClass("bi-app").addClass("bi-check2");
           li.attr("data-state", "done");
+          window.metrics.recordTaskCompleted();
           $("#voice-status").text(`Task completed: "${text}"`);
         } else {
           $("#voice-status").text("Task not found or already completed.");
@@ -626,15 +665,21 @@ Sentence: "${transcript}"
     if (local.task && local.score >= 0.82) {
       const li = $(`#listIn li#${local.task.id}`);
       li.find(".task-text").text(newName);
+      window.metrics.recordTaskEdited();
       $("#voice-status").text(`Task updated to: "${newName}"`);
       return;
     }
 
     try {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (!isLocal) {
+        throw new Error("LLM not available on GitHub Pages");
+      }
       const pick = await llmPickClosestTask(identifier, tasks);
       if (pick && pick.match_id && pick.confidence >= 0.55) {
         const li = $(`#listIn li#${pick.match_id}`);
         li.find(".task-text").text(newName);
+        window.metrics.recordTaskEdited();
         $("#voice-status").text(`Task updated to: "${newName}"`);
       } else {
         $("#voice-status").text("Couldn't confidently find a task to edit.");
@@ -655,16 +700,22 @@ Sentence: "${transcript}"
     const local = localBestMatch(identifier, tasks);
     if (local.task && local.score >= 0.82) {
       $(`#listIn li#${local.task.id}`).remove();
+      window.metrics.recordTaskDeleted();
       $("#voice-status").text(`Task removed: "${local.task.text}"`);
       return;
     }
 
     try {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (!isLocal) {
+        throw new Error("LLM not available on GitHub Pages");
+      }
       const pick = await llmPickClosestTask(identifier, tasks);
       if (pick && pick.match_id && pick.confidence >= 0.55) {
         const li = $(`#listIn li#${pick.match_id}`);
         const text = li.find(".task-text").text();
         li.remove();
+        window.metrics.recordTaskDeleted();
         $("#voice-status").text(`Task removed: "${text}"`);
       } else {
         $("#voice-status").text("Couldn't confidently find a task to remove.");
