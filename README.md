@@ -20,7 +20,7 @@ A beautifully designed, voice-enabled to-do list application that transforms how
 
 This project started as a simple spark, the wish to capture tasks just by speaking them out loud. Thanks to the power of large language models (LLMs), that spark quickly turned into something real. It’s fascinating how, today, you can take an idea from your head and bring it to life faster than ever before.
 
-Instead of only building another to-do app, I wanted to create an experience that feels almost human: when you say “I have to go to football today” or “remind me to get my nails done by Friday,” the app doesn’t just hear your words, it understands your intent. That’s the magic of combining speech with intelligent interpretation.
+Instead of only building another to-do app, I wanted to create an experience that feels almost human: when you say “I have to go to football today” or “I am going to get my nails done by Friday,” the app doesn’t just hear your words, it understands your intent. That’s the magic of combining speech with intelligent interpretation.
 
 This project showed me how much easier LLMs make it to transform ideas into working products. It’s been deeply motivating, reminding me that creativity paired with these tools isn’t just about functionality, it’s about giving ideas a kind of life of their own
 
