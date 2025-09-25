@@ -1,0 +1,1065 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>To do list</title>
+  <link rel="stylesheet" href="new.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css" />
+  <link rel="stylesheet" href="bootstrap.min.css" />
+</head>
+<body>
+<div id="main-page">
+  <div class="paper-container">
+    <div class="container container-sm">
+      <div id="nav">
+        <div class="filter-buttons">
+          <a class="btn" id="All" href="#">All</a>
+          <a class="btn" id="completed" href="#">Completed</a>
+          <a class="btn" id="active" href="#">Active</a>
+        </div>
+        <div class="top-actions">
+          <button class="top-action-btn" id="top-edit-btn" disabled><i class="bi bi-pencil"></i></button>
+          <button class="top-action-btn" id="top-remove-btn" disabled><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+      <div id="list">
+        <ol id="listIn"></ol>
+      </div>
+    </div>
+  </div>
+  
+  <div class="container container-sm" id="input-box">
+    <input id="input" name="input" maxlength="55" placeholder="Write Your Task Here" />
+    <span><button id="voiceBtn"><i class="bi bi-mic"></i></button></span>
+    <span><button id="addOn"><i class="bi bi-plus-square"></i></button></span>
+  </div>
+
+  <!-- Voice Processing Modal -->
+  <div id="voice-modal">
+    <h3>Voice Assistant</h3>
+    <div id="voice-status">Click the microphone to start</div>
+    <div id="voice-transcript"></div>
+    <div class="voice-buttons">
+      <button id="start-voice-btn">Start Listening</button>
+      <button id="stop-voice-btn" disabled>Stop</button>
+      <button id="cancel-voice-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="edit">
+  <h1 id="h_edit" style="display:inline-block">Edit</h1>
+  <span id="close"><i class="bi bi-x-lg"></i></span>
+  <input id="name_edit" placeholder="Enter New Name" name="nw_name" type="text" />
+  <button id="edit_btn">Edit</button>
+</div>
+
+<!-- Date Picker Modal -->
+<div id="date-picker-modal">
+  <h3>Select Due Date</h3>
+  <input type="date" id="date-input" />
+  <div class="date-picker-buttons">
+    <button id="set-date-btn">Set Date</button>
+    <button id="remove-date-btn">Remove Date</button>
+    <button id="cancel-date-btn">Cancel</button>
+  </div>
+</div>
+
+<div id="blur"></div>
+
+<script src="js/jquery-3.6.1.min.js"></script>
+<script src="https://unpkg.com/chrono-node/dist/chrono.min.js"></script>
+<script>
+  let id = 0;
+  let currentTaskForDate = null;
+  let recognition = null;
+  let isListening = false;
+
+  function toLocalISO(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  // Parse YYYY-MM-DD as a LOCAL date (midnight local), not UTC
+  function dateFromISOLocal(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  // -------------------------
+  // SMART MATCH HELPERS
+  // -------------------------
+  function snapshotTasks() {
+    return $("#listIn li").map(function () {
+      return {
+        id: this.id || null,
+        text: $(this).find(".task-text").text().trim(),
+        state: this.getAttribute("data-state") || "undone",
+        due_date: $(this).find(".due-date-display").attr("data-due-date") || null
+      };
+    }).get();
+  }
+
+  function normalize(s) {
+    return (s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\\s]/g, " ")
+      .replace(/\\s+/g, " ")
+      .trim();
+  }
+
+  // Simple token-based Dice coefficient (0..1)
+  function tokenDice(a, b) {
+    const A = new Set(normalize(a).split(" ").filter(Boolean));
+    const B = new Set(normalize(b).split(" ").filter(Boolean));
+    if (!A.size || !B.size) return 0;
+    let overlap = 0;
+    for (const t of A) if (B.has(t)) overlap++;
+    return (2 * overlap) / (A.size + B.size);
+  }
+
+  // Prefer ACTIVE tasks slightly when tied
+  function localBestMatch(query, tasks) {
+    let best = { task: null, score: 0 };
+    for (const t of tasks) {
+      const s = tokenDice(query, t.text) + (t.state === "undone" ? 0.05 : 0);
+      const score = Math.min(1, s);
+      if (score > best.score) best = { task: t, score };
+    }
+    return best; // { task, score }
+  }
+
+  async function llmPickClosestTask(userPhrase, tasks) {
+    const chooserPrompt = `
+You will be given:
+- a user sentence describing a task;
+- a JSON array of current tasks with fields: id, text, state, due_date.
+
+Pick the single best matching task by meaning and wording.
+Return VALID JSON (no backticks), like:
+{ "match_id": "<id or null>", "confidence": 0.0-1.0, "normalized_query": "<string>", "reason": "<short>" }
+
+Rules:
+- Prefer tasks with higher semantic and lexical overlap.
+- If two are close, prefer state="undone".
+- If confidence < 0.55, use null.
+User sentence: "${userPhrase}"
+Tasks: ${JSON.stringify(tasks)}
+`;
+
+    const res = await fetch("/api/voice-command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "x-ai/grok-4-fast:free",
+        messages: [{ role: "user", content: chooserPrompt }],
+        temperature: 0.1
+      })
+    });
+
+    if (!res.ok) throw new Error(`LLM chooser failed: ${res.status} ${await res.text()}`);
+    const payload = await res.json();
+    let aiText = payload.choices[0].message.content.trim();
+    const fence = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const jsonText = fence ? fence[1].trim() : aiText;
+
+    try { return JSON.parse(jsonText); } catch { return {}; }
+  }
+
+  // Initialize speech recognition
+  function initSpeechRecognition() {
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onstart = function () {
+        isListening = true;
+        $("#voice-status").text("Listening...");
+        $("#start-voice-btn").prop("disabled", true);
+        $("#stop-voice-btn").prop("disabled", false);
+        $("#voiceBtn i").removeClass("bi-mic").addClass("bi-mic-fill");
+      };
+
+      recognition.onresult = function (event) {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        $("#voice-transcript").text(transcript);
+      };
+
+      recognition.onend = function () {
+        isListening = false;
+        $("#voice-status").text("Processing...");
+        $("#start-voice-btn").prop("disabled", false);
+        $("#stop-voice-btn").prop("disabled", true);
+        $("#voiceBtn i").removeClass("bi-mic-fill").addClass("bi-mic");
+
+        const transcript = $("#voice-transcript").text();
+        if (transcript.trim()) {
+          processVoiceCommand(transcript);
+        }
+      };
+
+      recognition.onerror = function (event) {
+        $("#voice-status").text("Error: " + event.error);
+        isListening = false;
+        $("#start-voice-btn").prop("disabled", false);
+        $("#stop-voice-btn").prop("disabled", true);
+        $("#voiceBtn i").removeClass("bi-mic-fill").addClass("bi-mic");
+      };
+    } else {
+      alert("Speech recognition not supported in this browser");
+    }
+  }
+
+  async function processVoiceCommand(transcript) {
+    let command;
+
+    // Few-shot examples use LOCAL dates
+    const todayLocal = toLocalISO(new Date());
+    const tomorrowLocal = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      return toLocalISO(d);
+    })();
+
+    const prompt = `
+You are an assistant that extracts structured task data from sentences.
+**Output must be VALID JSON** (double-quoted keys/strings, no trailing commas, no backticks):
+  intent:    "add_task" | "complete_task" | "edit_task" | "remove_task" | "show_tasks"
+  task:      "<task description or identifier>"
+  new_name:  "<for edit_task; null otherwise>"
+  due_date:  "<YYYY-MM-DD or null>"
+  filter:    "all" | "completed" | "active" | "uncompleted"
+
+Important: Recognize various phrasings for adding tasks:
+- "I have to..." = add_task (ALWAYS means add a new task)
+- "I need to..." = add_task  
+- "I'm going to..." = add_task
+- "I must..." = add_task
+- "Add..." = add_task
+- "Go to..." = add_task (like "go to football", "go to gym")
+- "Attend..." = add_task (like "attend meeting")
+
+CRITICAL: "I have to" + [anything] = add_task intent. Examples:
+- "I have to call mom" → add_task
+- "I have to study" → add_task  
+- "I have to go to football" → add_task
+- "I have to buy groceries" → add_task
+
+ALSO CRITICAL: "[task] by [day]" = add_task intent. Examples:
+- "get my nails done by Friday" → add_task with due_date
+- "finish report by Monday" → add_task with due_date
+- "call doctor by next week" → add_task with due_date
+
+Examples:
+Sentence: "I'm going to make lunch today"
+→ { "intent":"add_task", "task":"make lunch", "due_date":"${todayLocal}", "new_name":null, "filter":null }
+
+Sentence: "I have to wash the dishes tomorrow"
+→ { "intent":"add_task", "task":"wash the dishes", "due_date":"${tomorrowLocal}", "new_name":null, "filter":null }
+
+Sentence: "I have to go to football today"
+→ { "intent":"add_task", "task":"go to football", "due_date":"${todayLocal}", "new_name":null, "filter":null }
+
+Sentence: "I have to call mom"
+→ { "intent":"add_task", "task":"call mom", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I have to study for exams"
+→ { "intent":"add_task", "task":"study for exams", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I have to buy groceries"
+→ { "intent":"add_task", "task":"buy groceries", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I have to finish my homework today"
+→ { "intent":"add_task", "task":"finish my homework", "due_date":"${todayLocal}", "new_name":null, "filter":null }
+
+Sentence: "Add buy groceries to my list"
+→ { "intent":"add_task", "task":"buy groceries", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I need to call mom"
+→ { "intent":"add_task", "task":"call mom", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I need to go to the gym tomorrow"
+→ { "intent":"add_task", "task":"go to the gym", "due_date":"${tomorrowLocal}", "new_name":null, "filter":null }
+
+Sentence: "I have to attend a meeting today"
+→ { "intent":"add_task", "task":"attend a meeting", "due_date":"${todayLocal}", "new_name":null, "filter":null }
+
+Sentence: "get my nails done by Friday"
+→ { "intent":"add_task", "task":"get my nails done", "due_date":"2025-01-17", "new_name":null, "filter":null }
+
+Sentence: "finish the report by Monday"
+→ { "intent":"add_task", "task":"finish the report", "due_date":"2025-01-20", "new_name":null, "filter":null }
+
+Sentence: "call the doctor by next week"
+→ { "intent":"add_task", "task":"call the doctor", "due_date":"2025-01-27", "new_name":null, "filter":null }
+
+Sentence: "I made lunch"
+→ { "intent":"complete_task", "task":"make lunch", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I have done the laundry"
+→ { "intent":"complete_task", "task":"do laundry", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I did the dishes"
+→ { "intent":"complete_task", "task":"wash the dishes", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "I completed my homework"
+→ { "intent":"complete_task", "task":"do homework", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "Delete my lunch task"
+→ { "intent":"remove_task", "task":"make lunch", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "Remove the laundry task"
+→ { "intent":"remove_task", "task":"do laundry", "due_date":null, "new_name":null, "filter":null }
+
+Sentence: "Change the task wash the dishes to clean the kitchen"
+→ { "intent":"edit_task", "task":"wash the dishes", "new_name":"clean the kitchen", "due_date":null, "filter":null }
+
+Sentence: "Rename my homework task to math assignment"
+→ { "intent":"edit_task", "task":"do homework", "new_name":"math assignment", "due_date":null, "filter":null }
+
+Sentence: "Show me all tasks"
+→ { "intent":"show_tasks", "task":null, "due_date":null, "new_name":null, "filter":"all" }
+
+Sentence: "Show me my completed tasks"
+→ { "intent":"show_tasks", "task":null, "due_date":null, "new_name":null, "filter":"completed" }
+
+Sentence: "Show me my active tasks"
+→ { "intent":"show_tasks", "task":null, "due_date":null, "new_name":null, "filter":"active" }
+
+Sentence: "Show me uncompleted tasks"
+→ { "intent":"show_tasks", "task":null, "due_date":null, "new_name":null, "filter":"uncompleted" }
+
+Sentence: "Show me my uncompleted tasks"
+→ { "intent":"show_tasks", "task":null, "due_date":null, "new_name":null, "filter":"uncompleted" }
+
+Now process this:
+Sentence: "${transcript}"
+`;
+
+    try {
+      const res = await fetch("/api/voice-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "x-ai/grok-4-fast:free",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.1
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`OpenRouter ${res.status}: ${err}`);
+      }
+
+      const payload = await res.json();
+      let aiText = payload.choices[0].message.content.trim();
+      const fenceMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonText = fenceMatch ? fenceMatch[1].trim() : aiText;
+      
+      // Debug logging
+      console.log("LLM Raw Response:", aiText);
+      console.log("Extracted JSON:", jsonText);
+      console.log("Original transcript:", transcript);
+      
+      try {
+        command = JSON.parse(jsonText);
+        console.log("Parsed command:", command);
+      } catch (parseError) {
+        console.error("JSON Parse Error:", parseError);
+        console.log("Raw AI text:", aiText);
+        command = { intent: "unknown" };
+      }
+
+      // Enhanced fallback: If intent is unclear or parsing failed, check for task patterns
+      if (!command.intent || command.intent === "unknown" || !command.task) {
+        const lowerTranscript = transcript.toLowerCase();
+        
+        if (lowerTranscript.includes("i have to") || 
+            lowerTranscript.includes("i need to") ||
+            lowerTranscript.includes("i'm going to")) {
+          command.intent = "add_task";
+          command.task = transcript.replace(/^(i have to|i need to|i'm going to)\s*/i, "").trim();
+          command.due_date = null;
+          command.new_name = null;
+          command.filter = null;
+          console.log("Fallback applied (I have to):", command);
+        } else if (/\bby\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week|this week)\b/i.test(transcript)) {
+          // Handle "task by day" patterns
+          command.intent = "add_task";
+          command.task = transcript.replace(/\s+by\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week|this week).*$/i, "").trim();
+          command.due_date = null; // Will be parsed later
+          command.new_name = null;
+          command.filter = null;
+          console.log("Fallback applied (by day):", command);
+        }
+      }
+
+      // Normalize/parse due date (handles "today", "tomorrow", etc.)
+      if (command.intent === "add_task") {
+        console.log("Processing add_task with command:", command);
+        let dt = null;
+
+        if (command.due_date) {
+          console.log("Command has due_date:", command.due_date);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(command.due_date)) {
+            dt = dateFromISOLocal(command.due_date); // LOCAL parse
+          } else {
+            dt = chrono.parseDate(command.due_date, new Date());
+          }
+        } else {
+          console.log("No due_date in command, checking transcript for date words");
+        }
+
+        // If model didn't include due_date, try to infer from transcript
+        if (!dt) {
+          console.log("Attempting to parse date from transcript:", transcript);
+          dt = chrono.parseDate(transcript, new Date());
+          console.log("Chrono parsed date:", dt);
+          
+          // If chrono couldn't parse it, check for common date patterns
+          if (!dt) {
+            const lowerTranscript = transcript.toLowerCase();
+            if (lowerTranscript.includes('today')) {
+              dt = new Date();
+              console.log("Set to today:", dt);
+            } else if (lowerTranscript.includes('tomorrow')) {
+              dt = new Date();
+              dt.setDate(dt.getDate() + 1);
+              console.log("Set to tomorrow:", dt);
+            } else if (lowerTranscript.includes('yesterday')) {
+              dt = new Date();
+              dt.setDate(dt.getDate() - 1);
+              console.log("Set to yesterday:", dt);
+            }
+          }
+        }
+
+        if (dt) {
+          const iso = toLocalISO(dt);
+          const todayIso = toLocalISO(new Date());
+          
+          console.log("Date processing:", { dt, iso, todayIso });
+
+          // year check (defensive)
+          if (!/^\d{4}$/.test(iso.slice(0, 4))) {
+            console.log("Year check failed:", iso.slice(0, 4));
+            alert("Year must be exactly 4 digits.");
+            return;
+          }
+          // allow TODAY; block only past
+          if (iso < todayIso) {
+            console.log("Date is in the past:", iso, "vs", todayIso);
+            alert("Please specify today or a future date (YYYY-MM-DD).");
+            return;
+          }
+          command.due_date = iso;
+          console.log("Final due_date set:", command.due_date);
+        } else {
+          console.log("No date found, command.due_date remains:", command.due_date);
+        }
+      }
+    } catch (err) {
+      console.error("Voice processing error:", err);
+      
+      // Last resort fallback: Check for task patterns even if LLM fails completely
+      const lowerTranscript = transcript.toLowerCase();
+      
+      if (lowerTranscript.includes("i have to") || 
+          lowerTranscript.includes("i need to") ||
+          lowerTranscript.includes("i'm going to")) {
+        command = {
+          intent: "add_task",
+          task: transcript.replace(/^(i have to|i need to|i'm going to)\s*/i, "").trim(),
+          due_date: null,
+          new_name: null,
+          filter: null
+        };
+        console.log("Emergency fallback applied (I have to):", command);
+      } else if (/\bby\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week|this week)\b/i.test(transcript)) {
+        command = {
+          intent: "add_task",
+          task: transcript.replace(/\s+by\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|next week|this week).*$/i, "").trim(),
+          due_date: null,
+          new_name: null,
+          filter: null
+        };
+        console.log("Emergency fallback applied (by day):", command);
+      } else {
+        $("#voice-status").text("Sorry, I couldn't understand that command.");
+        return;
+      }
+    }
+
+    executeVoiceCommand(command);
+  }
+
+  // Execute the parsed voice command
+  function executeVoiceCommand(command) {
+    switch (command.intent) {
+      case "add_task":
+        addTaskViaVoice(command.task, command.due_date);
+        break;
+      case "complete_task":
+        completeTaskViaVoice(command.task);
+        break;
+      case "edit_task":
+        editTaskViaVoice(command.task, command.new_name);
+        break;
+      case "remove_task":
+        removeTaskViaVoice(command.task);
+        break;
+      case "show_tasks":
+        showTasksViaVoice(command.filter);
+        break;
+      default:
+        $("#voice-status").text("Command not recognized.");
+    }
+    setTimeout(closeVoiceModal, 2000);
+  }
+
+  // Voice command implementations
+  function addTaskViaVoice(taskName, dueDate) {
+    console.log("addTaskViaVoice called with:", { taskName, dueDate });
+    
+    if (!taskName) {
+      $("#voice-status").text("No task name provided.");
+      return;
+    }
+
+    $("#input").val(taskName);
+    $("#addOn").click();
+
+    if (dueDate && dueDate !== null && dueDate !== undefined) {
+      console.log("Setting due date:", dueDate);
+      // Find the last added task and set its due date
+      setTimeout(() => {
+        const lastTask = $("#listIn li").last();
+        console.log("Last task found:", lastTask.length);
+        if (lastTask.length) {
+          const dueDateDisplay = lastTask.find(".due-date-display");
+          console.log("Due date display element:", dueDateDisplay.length);
+          dueDateDisplay.attr("data-due-date", dueDate);
+          dueDateDisplay.html("Due: " + dueDate);
+          dueDateDisplay.show();
+          console.log("Due date set successfully");
+        }
+      }, 100);
+    } else {
+      console.log("No due date provided");
+    }
+
+    // Success message - different based on whether due date was set
+    if (dueDate && dueDate !== null && dueDate !== undefined) {
+      $("#voice-status").text(`Task "${taskName}" added successfully with due date ${dueDate}!`);
+    } else {
+      $("#voice-status").text(`Task "${taskName}" added successfully! You can set a due date later using the calendar icon.`);
+    }
+  }
+
+  // -------- SMART COMPLETE / EDIT / REMOVE --------
+
+  async function completeTaskViaVoice(identifier) {
+    const tasks = snapshotTasks();
+    if (tasks.length === 0) {
+      $("#voice-status").text("There are no tasks to complete.");
+      return;
+    }
+
+    // Local first
+    const local = localBestMatch(identifier, tasks);
+    if (local.task && local.score >= 0.82) {
+      const li = $(`#listIn li#${local.task.id}`);
+      const icon = li.find(".bi-app");
+      if (icon.length) {
+        icon.removeClass("bi-app").addClass("bi-check2");
+        li.attr("data-state", "done");
+        $("#voice-status").text(`Task completed: "${local.task.text}"`);
+        return;
+      }
+    }
+
+    // LLM fallback
+    try {
+      const pick = await llmPickClosestTask(identifier, tasks);
+      if (pick && pick.match_id && pick.confidence >= 0.55) {
+        const li = $(`#listIn li#${pick.match_id}`);
+        const icon = li.find(".bi-app");
+        const text = li.find(".task-text").text();
+        if (icon.length) {
+          icon.removeClass("bi-app").addClass("bi-check2");
+          li.attr("data-state", "done");
+          $("#voice-status").text(`Task completed: "${text}"`);
+        } else {
+          $("#voice-status").text("Task not found or already completed.");
+        }
+      } else {
+        $("#voice-status").text("Couldn't confidently find a task to complete.");
+      }
+    } catch (e) {
+      console.error(e);
+      $("#voice-status").text("Error while matching task to complete.");
+    }
+  }
+
+  async function editTaskViaVoice(identifier, newName) {
+    if (!newName || !newName.trim()) {
+      $("#voice-status").text("Please provide a new name for the task.");
+      return;
+    }
+    const tasks = snapshotTasks();
+    if (tasks.length === 0) {
+      $("#voice-status").text("There are no tasks to edit.");
+      return;
+    }
+
+    const local = localBestMatch(identifier, tasks);
+    if (local.task && local.score >= 0.82) {
+      const li = $(`#listIn li#${local.task.id}`);
+      li.find(".task-text").text(newName);
+      $("#voice-status").text(`Task updated to: "${newName}"`);
+      return;
+    }
+
+    try {
+      const pick = await llmPickClosestTask(identifier, tasks);
+      if (pick && pick.match_id && pick.confidence >= 0.55) {
+        const li = $(`#listIn li#${pick.match_id}`);
+        li.find(".task-text").text(newName);
+        $("#voice-status").text(`Task updated to: "${newName}"`);
+      } else {
+        $("#voice-status").text("Couldn't confidently find a task to edit.");
+      }
+    } catch (e) {
+      console.error(e);
+      $("#voice-status").text("Error while matching task to edit.");
+    }
+  }
+
+  async function removeTaskViaVoice(identifier) {
+    const tasks = snapshotTasks();
+    if (tasks.length === 0) {
+      $("#voice-status").text("There are no tasks to remove.");
+      return;
+    }
+
+    const local = localBestMatch(identifier, tasks);
+    if (local.task && local.score >= 0.82) {
+      $(`#listIn li#${local.task.id}`).remove();
+      $("#voice-status").text(`Task removed: "${local.task.text}"`);
+      return;
+    }
+
+    try {
+      const pick = await llmPickClosestTask(identifier, tasks);
+      if (pick && pick.match_id && pick.confidence >= 0.55) {
+        const li = $(`#listIn li#${pick.match_id}`);
+        const text = li.find(".task-text").text();
+        li.remove();
+        $("#voice-status").text(`Task removed: "${text}"`);
+      } else {
+        $("#voice-status").text("Couldn't confidently find a task to remove.");
+      }
+    } catch (e) {
+      console.error(e);
+      $("#voice-status").text("Error while matching task to remove.");
+    }
+  }
+
+  function showTasksViaVoice(filter) {
+    switch (filter) {
+      case "all":
+        $("#All").click();
+        $("#voice-status").text("Showing all tasks");
+        break;
+      case "completed":
+        $("#completed").click();
+        $("#voice-status").text("Showing completed tasks");
+        break;
+      case "active":
+        $("#active").click();
+        $("#voice-status").text("Showing active tasks");
+        break;
+      case "uncompleted":
+        $("#active").click();
+        $("#voice-status").text("Showing uncompleted tasks");
+        break;
+      default:
+        $("#voice-status").text("Unknown filter");
+    }
+  }
+
+  function closeVoiceModal() {
+    $("#voice-modal").fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+    $("#voice-transcript").text("");
+    $("#voice-status").text("Click the microphone to start");
+  }
+
+  // Voice button event handlers
+  $("#voiceBtn").click(function () {
+    if (!recognition) {
+      initSpeechRecognition();
+    }
+
+    $("#voice-modal").css({ display: "block" });
+    $("#blur").css({ display: "block" });
+    $("#main-page").css("opacity", "0.7");
+  });
+
+  $("#start-voice-btn").click(function () {
+    if (recognition && !isListening) {
+      recognition.start();
+    }
+  });
+
+  $("#stop-voice-btn").click(function () {
+    if (recognition && isListening) {
+      recognition.stop();
+    }
+  });
+
+  $("#cancel-voice-btn").click(function () {
+    if (recognition && isListening) {
+      recognition.stop();
+    }
+    closeVoiceModal();
+  });
+
+  // Selection management functions
+  function updateSelection() {
+    const selectedItems = $("#listIn li input[type='checkbox']:checked");
+    const editBtn = $("#top-edit-btn");
+    const removeBtn = $("#top-remove-btn");
+    
+    if (selectedItems.length === 0) {
+      // No items selected - hide both buttons
+      editBtn.hide();
+      removeBtn.hide();
+      $("#listIn li").removeClass("selected");
+    } else if (selectedItems.length === 1) {
+      // One item selected - show both buttons, enable edit
+      editBtn.show().prop("disabled", false);
+      removeBtn.show().prop("disabled", false);
+      
+      // Update visual selection
+      $("#listIn li").removeClass("selected");
+      selectedItems.each(function() {
+        $(this).closest("li").addClass("selected");
+      });
+    } else {
+      // Multiple items selected - show both buttons, disable edit
+      editBtn.show().prop("disabled", true);
+      removeBtn.show().prop("disabled", false);
+      
+      // Update visual selection
+      $("#listIn li").removeClass("selected");
+      selectedItems.each(function() {
+        $(this).closest("li").addClass("selected");
+      });
+    }
+  }
+
+  function getSelectedTasks() {
+    const selectedItems = $("#listIn li input[type='checkbox']:checked");
+    return selectedItems.map(function() {
+      return $(this).closest("li");
+    }).get();
+  }
+
+  // Top action button handlers
+  $("#top-edit-btn").click(function() {
+    const selectedTasks = getSelectedTasks();
+    if (selectedTasks.length === 1) {
+      const task = selectedTasks[0];
+      const taskText = task.find(".task-text").text();
+      
+      $("#edit").css({ display: "block" });
+      $("#blur").css({ display: "block" });
+      $("#main-page").css("opacity", "0.7");
+      $("#name_edit").val(taskText);
+      
+      // Store the task reference for the edit button
+      window.currentEditingTask = task;
+      
+      // Remove any existing handlers and add new ones
+      $("#edit_btn").off("click").on("click", function() {
+        let value = $("#name_edit").val();
+        if (value.trim()) {
+          window.currentEditingTask.find(".task-text").text(value);
+          close(this);
+        }
+      });
+      
+      $("#close").off("click").on("click", function() {
+        close(this);
+      });
+    } else if (selectedTasks.length > 1) {
+      alert("Please select only one task to edit. Multiple tasks selected.");
+    } else {
+      alert("Please select a task to edit.");
+    }
+  });
+
+  $("#top-remove-btn").click(function() {
+    const selectedTasks = getSelectedTasks();
+    if (selectedTasks.length > 0) {
+      if (confirm(`Are you sure you want to remove ${selectedTasks.length} task(s)?`)) {
+        selectedTasks.forEach(function(task) {
+          $(task).remove();
+        });
+        updateSelection();
+      }
+    }
+  });
+
+  // Initialize speech recognition on page load
+  $(document).ready(function () {
+    initSpeechRecognition();
+    // Set "All" button as active by default
+    $("#All").addClass("active");
+  });
+
+  // Add task functionality
+  function addTask() {
+    id += 1;
+    let input = $("#input").val();
+    if (input.length > 0) {
+      let li = document.createElement("li");
+      li.id = id;
+
+      // Create selection checkbox
+      let selectionCheckbox = document.createElement("div");
+      selectionCheckbox.classList.add("selection-checkbox");
+      let checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.addEventListener("change", function() {
+        // Add/remove checked class for styling
+        if (this.checked) {
+          selectionCheckbox.classList.add("checked");
+        } else {
+          selectionCheckbox.classList.remove("checked");
+        }
+        updateSelection();
+      });
+      selectionCheckbox.appendChild(checkbox);
+      li.appendChild(selectionCheckbox);
+
+      // Create task content container
+      let taskContent = document.createElement("div");
+      taskContent.classList.add("task-content");
+
+      let text = document.createElement("p");
+      text.innerHTML = input;
+      text.classList.add("task-text");
+
+      // Create due date display
+      let dueDateDisplay = document.createElement("span");
+      dueDateDisplay.classList.add("due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", "");
+
+      taskContent.appendChild(text);
+      taskContent.appendChild(dueDateDisplay);
+      li.appendChild(taskContent);
+
+      li.setAttribute("data-state", "undone");
+      let icon = document.createElement("i");
+      icon.classList.add("bi", "bi-app");
+      icon.setAttribute("data-state", "undone");
+
+      // Create button container (only calendar and completion)
+      let buttonContainer = document.createElement("div");
+      buttonContainer.classList.add("task-buttons");
+
+      // Create calendar icon for date picker
+      let calendarIcon = document.createElement("span");
+      calendarIcon.innerHTML = '<i class="bi bi-calendar3"></i>';
+      calendarIcon.classList.add("calendar-icon");
+
+      // Add buttons to container
+      buttonContainer.appendChild(calendarIcon);
+      buttonContainer.appendChild(icon);
+
+      // Add button container to li
+      li.appendChild(buttonContainer);
+      $("#listIn").append(li);
+
+      $("#input").val(null);
+
+      // Calendar icon click handler
+      $(calendarIcon).click(function () {
+        currentTaskForDate = li;
+        let currentDate = dueDateDisplay.getAttribute("data-due-date");
+
+        const today = new Date();
+        const localToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const minDate = localToday.toISOString().split("T")[0];
+        $("#date-input").attr("min", minDate); // Only today or future
+
+        if (currentDate) {
+          $("#date-input").val(currentDate);
+        } else {
+          $("#date-input").val("");
+        }
+
+        $("#date-picker-modal").css({ display: "block" });
+        $("#blur").css({ display: "block" });
+        $("#main-page").css("opacity", "0.7");
+      });
+
+      // Remove old edit and remove handlers - now handled by top buttons
+    }
+  }
+
+  // Add task button
+  $("#addOn").click(function () {
+    addTask();
+  });
+
+  // Add task on Enter key press
+  $("#input").keypress(function (e) {
+    if (e.which === 13) { // 13 is the Enter key
+      addTask();
+    }
+  });
+
+  // Date picker handlers
+  $("#set-date-btn").click(function () {
+    let selectedDate = $("#date-input").val();
+
+    const todayObj = new Date();
+    const localToday = new Date(todayObj.getFullYear(), todayObj.getMonth(), todayObj.getDate());
+    const today = localToday.toISOString().split("T")[0];
+
+    if (selectedDate < today) {
+      alert("Please choose today or a future date.");
+      return;
+    }
+    // Year must be exactly 4 digits
+    const year = selectedDate.split("-")[0] || "";
+    if (!/^\d{4}$/.test(year)) {
+      alert("Year must be exactly 4 digits.");
+      return;
+    }
+    if (selectedDate && currentTaskForDate) {
+      let dueDateDisplay = currentTaskForDate.querySelector(".due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", selectedDate);
+      dueDateDisplay.innerHTML = "Due: " + selectedDate;
+      dueDateDisplay.style.display = "inline";
+    }
+    closeDatePicker();
+  });
+
+  $("#remove-date-btn").click(function () {
+    if (currentTaskForDate) {
+      let dueDateDisplay = currentTaskForDate.querySelector(".due-date-display");
+      dueDateDisplay.setAttribute("data-due-date", "");
+      dueDateDisplay.innerHTML = "";
+      dueDateDisplay.style.display = "none";
+    }
+    closeDatePicker();
+  });
+
+  $("#cancel-date-btn").click(function () {
+    closeDatePicker();
+  });
+
+  function closeDatePicker() {
+    $("#date-picker-modal").fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+    currentTaskForDate = null;
+  }
+
+  $("#listIn").click(function (e) {
+    if (e.target.nodeName === "I" && (e.target.classList.contains("bi-app") || e.target.classList.contains("bi-check2"))) {
+      if (e.target.classList.contains("bi-app")) {
+        e.target.classList.remove("bi-app");
+        e.target.classList.add("bi-check2");
+        e.target.parentElement.setAttribute("data-state", "done");
+      } else if (e.target.classList.contains("bi-check2")) {
+        e.target.classList.remove("bi-check2");
+        e.target.classList.add("bi-app");
+        e.target.parentElement.setAttribute("data-state", "undone");
+      }
+    }
+  });
+
+  function close(input) {
+    $(input).parent().fadeOut(500);
+    $("#main-page").css("opacity", "1");
+    $("#blur").fadeOut(500);
+    // Clear the current editing task reference
+    window.currentEditingTask = null;
+  }
+
+  // Global edit button handler (backup)
+  $("#edit_btn").click(function() {
+    if (window.currentEditingTask) {
+      let value = $("#name_edit").val();
+      if (value.trim()) {
+        window.currentEditingTask.find(".task-text").text(value);
+        close(this);
+      }
+    }
+  });
+
+  // Global close button handler (backup)
+  $("#close").click(function() {
+    close(this);
+  });
+
+  $("#All").click(function () {
+    // Remove active class from all buttons
+    $(".btn").removeClass("active");
+    // Add active class to clicked button
+    $(this).addClass("active");
+    
+    $("#listIn").children("li").fadeIn(300);
+  });
+
+  $("#completed").click(function () {
+    // Remove active class from all buttons
+    $(".btn").removeClass("active");
+    // Add active class to clicked button
+    $(this).addClass("active");
+    
+    $("#listIn").children("li").fadeIn(10);
+
+    let items_all = $("#listIn").children("li");
+    for (let i = 0; i < items_all.length; i++) {
+      let state = items_all[i].getAttribute("data-state");
+      if (state === "undone") {
+        $(items_all[i]).fadeOut(10);
+      }
+    }
+  });
+
+  $("#active").click(function () {
+    // Remove active class from all buttons
+    $(".btn").removeClass("active");
+    // Add active class to clicked button
+    $(this).addClass("active");
+    
+    $("#listIn").children("li").fadeIn(10);
+    let items_all = $("#listIn").children("li");
+    for (let i = 0; i < items_all.length; i++) {
+      let state = items_all[i].getAttribute("data-state");
+      if (state === "done") {
+        $(items_all[i]).fadeOut(10);
+      }
+    }
+  });
+</script>
+</body>
+</html>
