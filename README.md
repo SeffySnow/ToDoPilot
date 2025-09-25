@@ -3,7 +3,7 @@
 This is a simple and elegant **To-Do List** web application built using **HTML**, **CSS**, **Bootstrap**, and **jQuery**. It allows users to manage their daily tasks with a responsive and user-friendly interface.
 
 ---
-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
+
 
 ## 🌐 Live Demo
 
