@@ -155,9 +155,7 @@ I welcome contributions from fellow developers who share the vision of making te
 
 ---
 
-## 📄 License
 
-This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
