@@ -28,14 +28,5 @@ I wanted task management to feel **less effortful** and more conversational. Thi
 
 ## 🎥 Demo
 
-<video src="demo.mp4" 
-       controls 
-       loop 
-       muted 
-       playsinline 
-       width="720">
-  Your browser does not support the video tag. 
-  <a href="demo.mp4">Download the demo</a>.
-</video>
-
+![Demo](demo.gif)
 
