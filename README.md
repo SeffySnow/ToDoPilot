@@ -33,6 +33,23 @@ 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
 
 ---
 
+## 💡 Why This Interested Me
+I wanted task management to feel **less effortful** and more conversational. This project let me demonstrate practical **problem-solving** with real UX constraints (voice input, local-time date parsing, error handling) and show **LLM + agentic** integration in a way that's actually useful.
+
+---
+
+## 🧰 Technologies
+- **Frontend:** HTML, CSS, Bootstrap, JavaScript (jQuery), Web Speech API
+- **AI & Logic:** LLM for intent/date extraction, lightweight agent to execute intents
+- **Date parsing:** chrono-node (natural language → dates, normalized to `YYYY-MM-DD`)
+- **Backend:** Node.js, Express (as a proxy to keep API keys secret), node-fetch
+
+## 🎥 Demo
+
+![Demo](demo.gif)
+
+---
+
 ## 📁 Project Structure
 
 ```plaintext
