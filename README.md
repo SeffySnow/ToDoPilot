@@ -3,7 +3,13 @@
 A beautifully designed, voice-enabled to-do list application that transforms how you manage daily tasks. Built with a focus on **conversational interaction** and **seamless user experience**, this project bridges the gap between traditional task management and natural language processing.
 
 ---
+## 🎥 Demo
 
+![Demo](demo/demo.gif)
+
+*Watch the demo to see voice commands, task management, and the beautiful interface in action!*
+
+---
 ## 🌐 Live Demo
 
 🔗 **[https://seffysnow.github.io/ToDoPilot/](https://seffysnow.github.io/ToDoPilot/)**
@@ -100,13 +106,6 @@ Simply visit **[https://seffysnow.github.io/ToDoPilot/](https://seffysnow.github
 
 ---
 
-## 🎥 Demo
-
-![Demo](demo/demo.gif)
-
-*Watch the demo to see voice commands, task management, and the beautiful interface in action!*
-
----
 
 ## 📁 Project Structure
 
