@@ -53,6 +53,9 @@ This project showed me how much easier LLMs make it to transform ideas into work
 ### **Option 1: Use the Live Version**
 Simply visit **[https://seffysnow.github.io/ToDoPilot/](https://seffysnow.github.io/ToDoPilot/)** and start using it immediately!
 
+Note: You can create your own API key from [OpenRouter](https://openrouter.ai/) and use your credentials.
+I used x-ai/grok-4-fast:free
+
 ### **Option 2: Run Locally**
 
 1. **Clone the repository**
