@@ -7,7 +7,7 @@ This is a simple and elegant **To-Do List** web application built using **HTML**
 
 ## 🌐 Live Demo
 
-🔗 [https://seffysnow.github.io/To-Do-list.github.io](https://seffysnow.github.io/To-Do-list.github.io)
+🔗 [https://seffysnow.github.io/ToDoPilot/)
 
 ---
 
